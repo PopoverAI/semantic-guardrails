@@ -5,6 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { run } from "./cli.js";
 import { contentFile, fakeModel, gatewayKeyOnly, guardrailsFile } from "./testing/fake-model.js";
 
+/** Jev's refusal of content too long to judge, as the AI Gateway relays it. */
+const TOO_LONG = {
+  status: 400,
+  body: { error: { message: '{"error_type":"max_tokens_exceeded"}' } },
+};
+
 const GUARDRAILS = `assertions:
   - The spec names who the feature is for.
   - The spec states a success metric.
@@ -93,17 +99,20 @@ describe(requirement("GUARD-10"), () => {
           probability: 0.5,
         },
       ],
-      truncated: false,
     });
   });
 
   it(requirement("GUARD-10.6"), async () => {
-    fakeModel({ probabilities: [0.9, 0.9, 0.9] });
-    const long = "For support agents. ".repeat(10_000);
-    const { stdout, stderr } = await sam(["check", guardrailsFile(GUARDRAILS), "--json"], long);
-    expect(stderr).toMatch(/too long.*cut off/);
-    // the notice stays out of standard output, so the JSON still parses
-    expect(JSON.parse(stdout).truncated).toBe(true);
+    // the model refuses the content as too long, so a script piping --json into another tool gets nothing to parse
+    fakeModel(TOO_LONG);
+    const refused = await sam(["check", guardrailsFile(GUARDRAILS), "--json"], "# Spec");
+    expect(refused.stderr).toMatch(/more than the model can judge in one request/);
+    expect(refused.stdout).toBe("");
+    // and with no key, the same
+    vi.stubEnv("AI_GATEWAY_API_KEY", "");
+    const keyless = await sam(["check", guardrailsFile(GUARDRAILS), "--json"], "# Spec");
+    expect(keyless.stderr).toMatch(/key is needed/);
+    expect(keyless.stdout).toBe("");
   });
 });
 
@@ -120,19 +129,8 @@ describe(requirement("GUARD-11"), () => {
     expect(code).toBe(1);
   });
 
-  it(requirement("GUARD-11.2"), async () => {
-    fakeModel({ probabilities: [0.9, 0.9, 0.9] });
-    const long = "For support agents. ".repeat(10_000);
-    const passing = await sam(["check", guardrailsFile(GUARDRAILS)], long);
-    expect(passing.stderr).toMatch(/cut off/);
-    expect(passing.code).toBe(0);
-    fakeModel({ probabilities: [0.9, 0.1, 0.9] });
-    const failing = await sam(["check", guardrailsFile(GUARDRAILS)], long);
-    expect(failing.code).toBe(1);
-  });
-
-  describe(requirement("GUARD-11.3"), () => {
-    it(requirement("GUARD-11.3.0"), async () => {
+  describe(requirement("GUARD-11.2"), () => {
+    it(requirement("GUARD-11.2.0"), async () => {
       fakeModel({ probabilities: [0.9] });
       const missing = await sam(["check", "/no/such/guardrails.yaml"], "# Spec");
       expect(missing.code).toBe(2);
@@ -142,14 +140,14 @@ describe(requirement("GUARD-11"), () => {
       expect(refused.stderr).toMatch(/nothing to check/);
     });
 
-    it(requirement("GUARD-11.3.1"), async () => {
+    it(requirement("GUARD-11.2.1"), async () => {
       fakeModel({ probabilities: [0.9, 0.9, 0.9] });
       const { code, stderr } = await sam(["check", guardrailsFile(GUARDRAILS), "/no/such/spec.md"]);
       expect(code).toBe(2);
       expect(stderr).toMatch(/Couldn't read \/no\/such\/spec\.md/);
     });
 
-    it(requirement("GUARD-11.3.2"), async () => {
+    it(requirement("GUARD-11.2.2"), async () => {
       const sent = fakeModel({ probabilities: [0.9, 0.9, 0.9] });
       expect((await sam(["check", guardrailsFile(GUARDRAILS)], "")).code).toBe(2);
       const empty = contentFile("empty.md", "\n");
@@ -157,7 +155,14 @@ describe(requirement("GUARD-11"), () => {
       expect(sent).toHaveLength(0);
     });
 
-    it(requirement("GUARD-11.3.3"), async () => {
+    it(requirement("GUARD-11.2.3"), async () => {
+      fakeModel(TOO_LONG);
+      const { code, stderr } = await sam(["check", guardrailsFile(GUARDRAILS)], "# Spec");
+      expect(code).toBe(2);
+      expect(stderr).toMatch(/more than the model can judge in one request/);
+    });
+
+    it(requirement("GUARD-11.2.4"), async () => {
       vi.stubEnv("AI_GATEWAY_API_KEY", "");
       fakeModel({ probabilities: [0.9, 0.9, 0.9] });
       const { code, stderr } = await sam(["check", guardrailsFile(GUARDRAILS)], "# Spec");
@@ -165,14 +170,14 @@ describe(requirement("GUARD-11"), () => {
       expect(stderr).toMatch(/key is needed/);
     });
 
-    it(requirement("GUARD-11.3.4"), async () => {
+    it(requirement("GUARD-11.2.5"), async () => {
       fakeModel({ status: 403, body: { error: { message: "Forbidden" } } });
       const { code, stderr } = await sam(["check", guardrailsFile(GUARDRAILS)], "# Spec");
       expect(code).toBe(2);
       expect(stderr).toMatch(/model couldn't judge the content/);
     });
 
-    it(requirement("GUARD-11.3.5"), async () => {
+    it(requirement("GUARD-11.2.6"), async () => {
       fakeModel({ probabilities: [0.9, 0.9, 0.9] });
       expect((await sam(["check"], "# Spec")).stderr).toMatch(/Usage: semantic-guardrails check/);
       expect((await sam(["check"], "# Spec")).code).toBe(2);
@@ -183,7 +188,7 @@ describe(requirement("GUARD-11"), () => {
   });
 });
 
-it(`${requirement("GUARD-11.3.5")}, as the process's own exit status`, () => {
+it(`${requirement("GUARD-11.2.6")}, as the process's own exit status`, () => {
   // the built command, as a script or CI would run it; `npm test` builds first
   const result = spawnSync(process.execPath, ["dist/bin.js"], { encoding: "utf8" });
   expect(result.stderr).toMatch(/Usage: semantic-guardrails check/);

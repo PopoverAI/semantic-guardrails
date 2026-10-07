@@ -76,43 +76,33 @@ it(requirement("GUARD-5"), async () => {
   expect(results).toHaveLength(5);
 });
 
+/** Jev's refusal of content too long to judge, as the AI Gateway relays it. */
+const TOO_LONG = {
+  status: 400,
+  body: { error: { message: '{"error_type":"max_tokens_exceeded"}' } },
+};
+
 describe(requirement("GUARD-6"), () => {
   it(requirement("GUARD-6.0"), async () => {
-    const sent = fakeModel({ probabilities: [0.9] });
-    // about 15,000 tokens of prose, as Jev counts them
-    const content = "The spec names who the feature is for. ".repeat(1_500);
-    const result = await check(ONE, content);
+    // about 60,000 tokens, nearly twice what Jev judges in one request: sent whole, once, and not again after the refusal
+    const sent = fakeModel(TOO_LONG, { probabilities: [0.9] });
+    const content = "The spec names who the feature is for. ".repeat(6_000);
+    await check(ONE, content).catch(() => {});
+    expect(sent).toHaveLength(1);
     expect(sent[0].state).toBe(content);
-    expect(result.truncated).toBe(false);
   });
 
   it(requirement("GUARD-6.1"), async () => {
-    const sent = fakeModel({ probabilities: [0.9] });
-    // about 60,000 tokens, nearly twice what Jev judges in one request
-    const content = "The spec names who the feature is for. ".repeat(6_000);
-    const result = await check(ONE, content);
-    const state = sent[0].state as string;
-    expect(state.length).toBeLessThan(content.length);
-    // at least as much as GUARD-6.0 shows is judged whole
-    expect(state.length).toBeGreaterThanOrEqual(58_500);
-    expect(content.startsWith(state)).toBe(true);
-    expect(result.truncated).toBe(true);
+    fakeModel(TOO_LONG);
+    await expect(check(ONE, "Saved searches are for support agents. ".repeat(6_000))).rejects.toThrow();
   });
 
-  it(`${requirement("GUARD-6.1")}, even when the model finds the cut content still too long`, async () => {
-    // dense text the estimate undercounts: the model refuses it once, then judges a shorter beginning
-    const sent = fakeModel(
-      { status: 400, body: { error: { message: '{"error_type":"max_tokens_exceeded"}' } } },
-      { probabilities: [0.9] },
+  it(requirement("GUARD-6.2"), async () => {
+    fakeModel(TOO_LONG);
+    const error = await rejection(check(ONE, "Saved searches are for support agents. ".repeat(6_000)));
+    expect(error.message).toMatch(
+      /content and assertions together are more than the model can judge in one request \(about 32,000 tokens for Jev\)/,
     );
-    const content = "検索を保存する。".repeat(5_000);
-    const result = await check(ONE, content);
-    expect(sent).toHaveLength(2);
-    const [first, second] = sent.map((s) => s.state as string);
-    expect(second.length).toBeLessThan(first.length);
-    expect(second.length).toBeGreaterThanOrEqual(first.length * 0.5);
-    expect(content.startsWith(second)).toBe(true);
-    expect(result.truncated).toBe(true);
   });
 });
 
@@ -236,7 +226,6 @@ describe(requirement("GUARD-9"), () => {
         { assertion: "A.", verdict: "unsure", probability: 0.5 },
         { assertion: "B.", verdict: "pass", probability: 0.9 },
       ],
-      truncated: false,
     });
   });
 

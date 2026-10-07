@@ -48,9 +48,10 @@ GUARD-5: Checking content against a guardrails file takes one model request, how
 ```
 
 ```dotrequirements
-GUARD-6: Content too long for the model is cut to fit
-  0. → When the content and the longest assertion together are well within what the model can judge in one request (32,000 tokens for Jev), all of the content is judged
-  1. → When they are not, the beginning of the content is judged, the end is left out, and the result says the content was cut off
+GUARD-6: Content too long for the model is refused rather than cut, so no verdict is ever based on part of the content
+  0. → The content is sent to the model whole, and is never shortened to fit, before the request or after a refusal
+  1. → When the model refuses the content as too long, no verdicts are given
+  2. → When the model refuses the content as too long, Sam is told the content and assertions together are more than the model can judge in one request (about 32,000 tokens for Jev)
 ```
 
 ```dotrequirements
@@ -80,7 +81,7 @@ GUARD-9: Sam checks content from code with `check`, which returns a promise
   1. → `check` takes the content in either form
     1.0. → as text
     1.1. → as any JSON value, which the model judges as its JSON text
-  2. → The promise resolves to `{ results, truncated }`, where `results` lists `{ assertion, verdict, probability }` for each assertion in the order the guardrails list them, `verdict` is `"pass"`, `"fail"` or `"unsure"`, and `truncated` says whether the content was cut off
+  2. → The promise resolves to `{ results }`, where `results` lists `{ assertion, verdict, probability }` for each assertion in the order the guardrails list them, and `verdict` is `"pass"`, `"fail"` or `"unsure"`
   3. → When `check` cannot give verdicts, because the guardrails or content are refused, no key is given or the model cannot be reached, the promise rejects with an error whose message says why
 ```
 
@@ -94,19 +95,19 @@ GUARD-10: Sam checks files from the command line with `semantic-guardrails check
   3. → Sam sees each failed and unsure assertion, in the guardrails file's order, with its probability to two decimal places, followed by how many assertions passed
   4. → When every assertion passes, Sam sees only how many passed
   5. → When Sam adds `--json`, the object `check` resolves to is printed to standard output, and nothing else is
-  6. → When the content was cut off, Sam is told so on standard error
+  6. → When the command gives no verdicts, Sam is told why on standard error, and nothing is printed to standard output, even with `--json`
 ```
 
 ```dotrequirements
 GUARD-11: The command's exit code tells a script what happened
   0. → When no assertion fails, the command exits 0, even when some are unsure
   1. → When any assertion fails, the command exits 1
-  2. → Content being cut off does not change the exit code
-  3. → When the command gives no verdicts, it exits 2
-    3.0. → when the guardrails file is missing, unreadable or refused
-    3.1. → when a named file cannot be read
-    3.2. → when the content is empty
-    3.3. → when no key is given
-    3.4. → when the model cannot be reached or refuses the request
-    3.5. → when the command is used wrongly, such as with no guardrails file named or an unknown option
+  2. → When the command gives no verdicts, it exits 2
+    2.0. → when the guardrails file is missing, unreadable or refused
+    2.1. → when a named file cannot be read
+    2.2. → when the content is empty
+    2.3. → when the model refuses the content as too long
+    2.4. → when no key is given
+    2.5. → when the model cannot be reached or refuses the request
+    2.6. → when the command is used wrongly, such as with no guardrails file named or an unknown option
 ```

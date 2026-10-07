@@ -56,11 +56,6 @@ export async function run(argv: string[], io: Io): Promise<number> {
     return 2;
   }
 
-  if (result.truncated) {
-    io.stderr(
-      "The content was too long for the model, so its end was cut off and not checked.\n",
-    );
-  }
   io.stdout(args.values.json ? `${JSON.stringify(result, null, 2)}\n` : report(result));
   return result.results.some((r) => r.verdict === "fail") ? 1 : 0;
 }

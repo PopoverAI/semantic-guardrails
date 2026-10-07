@@ -64,6 +64,7 @@ semantic-guardrails check <guardrails.yaml> [files...] [--json]
 - Named files are judged together, in the order named, each marked with its path. With no files, standard input is judged.
 - Failed and unsure assertions are listed with their probabilities, then how many passed.
 - `--json` prints the same object `check` returns, and nothing else, to standard output.
+- When it can't check, it says why on standard error and prints nothing to standard output.
 
 Exit codes:
 
@@ -71,14 +72,14 @@ Exit codes:
 |---|---|
 | 0 | No assertion failed (some may be unsure) |
 | 1 | At least one assertion failed |
-| 2 | Couldn't check: an invalid guardrails file, an unreadable or empty input, no key, or the model unreachable |
+| 2 | Couldn't check: an invalid guardrails file, an unreadable or empty input, content too long for the model, no key, or the model unreachable |
 
 ## In code
 
 ```ts
 import { check } from "semantic-guardrails";
 
-const { results, truncated } = await check("guardrails.yaml", draft);
+const { results } = await check("guardrails.yaml", draft);
 
 for (const { assertion, verdict, probability } of results) {
   if (verdict === "fail") console.log(`Fails: ${assertion} (${probability})`);
@@ -92,14 +93,39 @@ for (const { assertion, verdict, probability } of results) {
 
 ## Long content
 
-Jev judges about 32,000 tokens in one request. Content past that is cut from the end, and the result says so (`truncated: true`; a notice on standard error from the command). Cutting the content doesn't change the exit code.
+Jev judges about 32,000 tokens in one request, assertions included. Content longer than that is refused, not cut: the check gives no verdicts and says the content is too long (exit 2 from the command). A guardrail that passed on content the model never read would be worse than one that refuses. To check part of something, cut it yourself before piping it in.
 
-### When the code is too big to fit
+Jev's tokenizer isn't public, and its refusal doesn't say how far over the limit the content is. OpenAI's `cl100k_base` tokenizer comes within about 20% of Jev's count. Measured against Jev in October 2026:
 
-Code files can be named like any others: `semantic-guardrails check guardrails.yaml src/auth.ts src/session.ts`. When there's more code than fits, [Repomix](https://github.com/yamadashy/repomix) can pack a smaller version of it to pipe in. `--compress` keeps signatures and drops function bodies, and `--token-count-tree --token-count-encoding cl100k_base` shows how big each file is, which comes close to how Jev counts:
+| Content | Characters per Jev token | Jev's count ÷ `cl100k_base`'s |
+|---|---|---|
+| English prose | 3.9 | 1.03 |
+| Markdown | 3.8 | 1.07 |
+| TypeScript | 3.5 | 1.07 |
+| JSON | 2.2 | 1.17 |
+| Emoji and accented text | 2.5 | 0.83 |
+| Japanese | 1.0 | 1.04 |
+
+So to be safe, keep content to about 26,000 `cl100k_base` tokens. (`o200k_base`, the other common tokenizer, was off by as much as 35%.)
+
+### Code
+
+Code files can be named like any others: `semantic-guardrails check guardrails.yaml src/auth.ts src/session.ts`. When there's more code than fits, [Repomix](https://github.com/yamadashy/repomix) can pack a smaller version of it to pipe in, and measure it with `cl100k_base`:
 
 ```sh
+# See which files are largest
+repomix --token-count-tree --token-count-encoding cl100k_base --include "src/**/*.ts"
+
+# Pack a smaller version: --compress keeps signatures and drops function bodies
 repomix --stdout --compress --include "src/**/*.ts" | semantic-guardrails check guardrails.yaml
+```
+
+Repomix's `--token-budget` makes Repomix itself exit 1 when the pack is over a budget, which can catch a codebase growing toward the limit before Jev refuses it. With `--stdout` it exits without printing why, and in a pipe its exit code is lost unless `pipefail` is set:
+
+```sh
+set -o pipefail
+repomix --stdout --compress --token-count-encoding cl100k_base --token-budget 26000 \
+  | semantic-guardrails check guardrails.yaml
 ```
 
 ## License

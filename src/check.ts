@@ -13,8 +13,6 @@ export interface AssertionResult {
 export interface CheckResult {
   /** One per assertion, in the order the guardrails list them. */
   results: AssertionResult[];
-  /** Whether the end of the content was left out to fit what the model can judge. */
-  truncated: boolean;
 }
 
 /** A JSON value, as content to judge. */
@@ -37,20 +35,15 @@ export interface CheckOptions {
 const GATEWAY_BASE_URL = "https://ai-gateway.vercel.sh/typesafe";
 const GATEWAY_MODEL = "typesafe-ai/jev";
 
-/** What Jev judges in one request: the content plus the longest assertion. */
-const MODEL_TOKEN_LIMIT = 32_000;
-/** Room left for what the request adds around the content. */
-const REQUEST_OVERHEAD_TOKENS = 1_000;
-/**
- * Characters per token, set below what Jev measured (3.8 for English prose and
- * for code) so the estimate errs toward cutting a little early.
- */
-const CHARS_PER_TOKEN = 3;
-/** When the model still finds the content too long, keep this share of it and try again. */
-const SHRINK = 0.7;
 /** Errors are reported in the rejection, not logged; a full-length request gets time to finish. */
 const CLIENT_SETTINGS = { logLevel: "off", timeout: 60_000 } as const;
-const MAX_SHRINKS = 5;
+
+/**
+ * Jev's refusal of content too long to judge says only that, not by how much,
+ * and the package can't count tokens as Jev does; so it never measures or cuts.
+ */
+const TOO_LONG =
+  "The content and assertions together are more than the model can judge in one request (about 32,000 tokens for Jev). Shrink the content and check again.";
 
 /**
  * Check content against guardrails. `guardrails` is a YAML file's path or the
@@ -69,35 +62,26 @@ export async function check(
   }
   const client = modelClient(options);
 
-  const longest = Math.max(...assertions.map((a) => a.length));
-  const budget = (MODEL_TOKEN_LIMIT - REQUEST_OVERHEAD_TOKENS) * CHARS_PER_TOKEN - longest;
-  let state = text.length > budget ? text.slice(0, budget) : text;
-
   const questions: Record<string, NoulQuestion> = {};
   assertions.forEach((assertion, i) => {
     questions[`a${i}`] = { type: "noul", instructions: assertion };
   });
 
-  for (let shrinks = 0; ; shrinks++) {
-    try {
-      const { answers } = await client.systemOne({ state, questions });
-      return {
-        results: assertions.map((assertion, i) => {
-          const probability = answers[`a${i}`].noul;
-          return { assertion, verdict: verdict(probability, pass, fail), probability };
-        }),
-        truncated: state.length < text.length,
-      };
-    } catch (error) {
-      if (tooLong(error) && shrinks < MAX_SHRINKS) {
-        state = state.slice(0, Math.floor(state.length * SHRINK));
-        continue;
-      }
-      throw new Error(`The model couldn't judge the content: ${describe(error)}`, {
-        cause: error,
-      });
-    }
+  let answers: Record<string, { noul: number }>;
+  try {
+    ({ answers } = await client.systemOne({ state: text, questions }));
+  } catch (error) {
+    if (tooLong(error)) throw new Error(TOO_LONG, { cause: error });
+    throw new Error(`The model couldn't judge the content: ${describe(error)}`, {
+      cause: error,
+    });
   }
+  return {
+    results: assertions.map((assertion, i) => {
+      const probability = answers[`a${i}`].noul;
+      return { assertion, verdict: verdict(probability, pass, fail), probability };
+    }),
+  };
 }
 
 export function verdict(probability: number, pass: number, fail: number): Verdict {
