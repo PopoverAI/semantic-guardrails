@@ -259,6 +259,29 @@ describe(requirement("GUARD-11"), () => {
       expect(stderr).toMatch(/model couldn't judge the content/);
     });
 
+    it(requirement("GUARD-11.2.7"), async () => {
+      // the third assertion's score is missing, as in a partial answer
+      fakeModel({
+        status: 200,
+        body: {
+          model: "typesafe-ai/jev",
+          answers: {
+            a0: { type: "noul", noul: 0.9 },
+            a1: { type: "noul", noul: 0.9 },
+            a2: { type: "noul", noul: null },
+          },
+          usage: { input_tokens: 1 },
+        },
+      });
+      const { code, stdout, stderr } = await sam(
+        ["check", guardrailsFile(GUARDRAILS)],
+        "# Spec",
+      );
+      expect(code).toBe(2);
+      expect(stderr).toMatch(/model couldn't judge the content/);
+      expect(stdout).toBe("");
+    });
+
     it(requirement("GUARD-11.2.6"), async () => {
       fakeModel({ probabilities: [0.9, 0.9, 0.9] });
       expect((await sam(["check"], "# Spec")).stderr).toMatch(

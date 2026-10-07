@@ -88,7 +88,12 @@ export async function check(
   }
   return {
     results: assertions.map((assertion, i) => {
-      const probability = answers[`a${i}`].noul;
+      const probability = answers?.[`a${i}`]?.noul;
+      if (typeof probability !== "number" || !Number.isFinite(probability)) {
+        throw new Error(
+          `The model couldn't judge the content: its answer has no judgment of "${assertion}".`,
+        );
+      }
       return {
         assertion,
         verdict: verdict(probability, pass, fail),

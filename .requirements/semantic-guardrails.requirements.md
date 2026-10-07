@@ -36,6 +36,7 @@ GUARD-3: Each assertion gets a verdict from the model's probability that it hold
   1. → When the probability is at or below `fail`, the verdict is fail
   2. → When the probability is between `fail` and `pass`, the verdict is unsure
   3. → Each verdict comes with the probability it was based on
+  4. → When the model's answer leaves out an assertion, or gives it a probability that isn't a number, no verdicts are given, and Sam is told the model couldn't judge the content and which assertion it missed
 ```
 
 ```dotrequirements
@@ -44,7 +45,7 @@ GUARD-4: The model judges each assertion as Sam wrote it
 ```
 
 ```dotrequirements
-GUARD-5: Checking content against a guardrails file takes one model request, however many assertions the file holds
+GUARD-5: A check asks the model about all of a guardrails file's assertions together, so adding assertions doesn't add requests to the model
 ```
 
 ```dotrequirements
@@ -82,7 +83,7 @@ GUARD-9: Sam checks content from code with `check`, which returns a promise
     1.0. → as text
     1.1. → as any JSON value, which the model judges as its JSON text
   2. → The promise resolves to `{ results }`, where `results` lists `{ assertion, verdict, probability }` for each assertion in the order the guardrails list them, and `verdict` is `"pass"`, `"fail"` or `"unsure"`
-  3. → When `check` cannot give verdicts, because the guardrails or content are refused, no key is given or the model cannot be reached, the promise rejects with an error whose message says why
+  3. → When `check` gives no verdicts, the promise rejects with an error whose message says why
 ```
 
 ## On the command line
@@ -110,4 +111,5 @@ GUARD-11: The command's exit code tells a script what happened
     2.4. → when no key is given
     2.5. → when the model cannot be reached or refuses the request
     2.6. → when the command is used wrongly, such as with no guardrails file named or an unknown option
+    2.7. → when the model's answer leaves out an assertion or gives it a probability that isn't a number
 ```

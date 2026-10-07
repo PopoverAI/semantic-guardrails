@@ -222,6 +222,37 @@ describe(requirement("GUARD-8"), () => {
   });
 });
 
+describe(requirement("GUARD-3.4"), () => {
+  const TWO = { assertions: ["A.", "B."] };
+  const answered = (answers: unknown) => ({
+    status: 200,
+    body: { model: "typesafe-ai/jev", answers, usage: { input_tokens: 1 } },
+  });
+
+  it.each([
+    ["no answer for an assertion", { a0: { type: "noul", noul: 0.9 } }],
+    [
+      "an answer with no score",
+      { a0: { type: "noul", noul: 0.9 }, a1: { type: "noul", noul: null } },
+    ],
+    [
+      "an answer whose score isn't a number",
+      { a0: { type: "noul", noul: 0.9 }, a1: { type: "noul", noul: "high" } },
+    ],
+    ["no answers at all", undefined],
+  ])("%s", async (_, answers) => {
+    fakeModel(answered(answers));
+    const error = await rejection(check(TWO, SPEC));
+    expect(error.message).toMatch(/model couldn't judge the content/);
+  });
+
+  it("names the assertion the model didn't judge", async () => {
+    fakeModel(answered({ a0: { type: "noul", noul: 0.9 } }));
+    const error = await rejection(check(TWO, SPEC));
+    expect(error.message).toMatch(/"B\."/);
+  });
+});
+
 describe(requirement("GUARD-9"), () => {
   it(requirement("GUARD-9.0.0"), async () => {
     fakeModel({ probabilities: [0.9] });

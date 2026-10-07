@@ -52,7 +52,7 @@ assertions:
 
 **Mistakes in the file are refused, not ignored.** A misspelled setting like `pas: 0.9`, an assertion that isn't text, or thresholds out of order stop the check with a message saying what's wrong, rather than silently falling back to a default.
 
-**Checking costs one model request however many assertions the file holds,** so grouping related assertions in one file is cheaper than splitting them across several.
+**A check asks the model about all of a file's assertions together,** so grouping related assertions in one file is cheaper than splitting them across several.
 
 ## Command line
 
