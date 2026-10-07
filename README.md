@@ -94,13 +94,12 @@ for (const { assertion, verdict, probability } of results) {
 
 Jev judges about 32,000 tokens in one request. Content past that is cut from the end, and the result says so (`truncated: true`; a notice on standard error from the command). Cutting the content doesn't change the exit code.
 
-## Checking code
+### When the code is too big to fit
 
-To check a codebase, or part of one, pack it with [Repomix](https://github.com/yamadashy/repomix) and pipe it in. `--compress` keeps signatures and drops function bodies, so more of the code fits before anything is cut:
+Code files can be named like any others: `semantic-guardrails check guardrails.yaml src/auth.ts src/session.ts`. When there's more code than fits, [Repomix](https://github.com/yamadashy/repomix) can pack a smaller version of it to pipe in. `--compress` keeps signatures and drops function bodies, and `--token-count-tree --token-count-encoding cl100k_base` shows how big each file is, which comes close to how Jev counts:
 
 ```sh
-repomix --stdout --compress | semantic-guardrails check guardrails.yaml
-git diff --name-only main | repomix --stdin --stdout | semantic-guardrails check guardrails.yaml
+repomix --stdout --compress --include "src/**/*.ts" | semantic-guardrails check guardrails.yaml
 ```
 
 ## License
