@@ -32,7 +32,8 @@
   "files": [
     "dist",
     "LICENSE",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -50,5 +51,8 @@
     "@types/node": "^20.19.43",
     "typescript": "^5.9.3",
     "vitest": "^3.2.7"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

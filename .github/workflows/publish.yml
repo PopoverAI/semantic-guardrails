@@ -1,0 +1,157 @@
+name: publish
+
+# Publishes semantic-guardrails from main. A version bump merged through a
+# reviewed PR is what releases: when main's package.json version is not yet
+# on npm, this runs the prepublishOnly gate, publishes through npm trusted
+# publishing (OIDC; no token stored anywhere), and tags v<version> on the
+# published commit. Because the trigger is "not yet on npm" rather than
+# "changed in this push", a publish that failed is retried by the next push,
+# or by a manual run of this workflow.
+#
+# Two jobs: `check` runs on every push and decides; only `publish` uses the
+# `npm` environment, which only main may use and which npm's trusted-publisher
+# settings require. So a copy of this workflow edited on a branch cannot
+# publish, and an ordinary push to main creates no deployment record.
+#
+# Ported from PopoverAI/convex-simple-authz's publish workflow, with npm in
+# place of pnpm and provenance on, since this repository is public; keep the
+# two close so a fix in either ports by diff.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "SHA to publish from (defaults to main HEAD)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # only to tag an already-published version (see ensure-tag.sh)
+    outputs:
+      sha: ${{ steps.on-main.outputs.sha }}
+      name: ${{ steps.check.outputs.name }}
+      version: ${{ steps.check.outputs.version }}
+      publish: ${{ steps.check.outputs.publish }}
+    steps:
+      - id: resolve-sha
+        name: Resolve target SHA
+        env:
+          INPUT_SHA: ${{ inputs.sha }}
+          GITHUB_SHA_FALLBACK: ${{ github.sha }}
+        run: |
+          SHA="${INPUT_SHA:-$GITHUB_SHA_FALLBACK}"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "Target SHA: $SHA"
+
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.resolve-sha.outputs.sha }}
+          fetch-depth: 0   # all branches and tags: the main check below needs origin/main
+          persist-credentials: false   # the write token is passed only to the tag script
+
+      - id: on-main
+        name: Only a commit on main may be published
+        run: |
+          # A manual run can name any SHA or start from any branch; a release
+          # must be something that was reviewed and merged.
+          SHA=$(git rev-parse HEAD)
+          if ! git merge-base --is-ancestor "$SHA" origin/main; then
+            echo "::error::$SHA is not on main. Only a commit merged to main can be published."
+            exit 1
+          fi
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
+      - id: check
+        name: Is this version on npm yet?
+        run: |
+          NAME=$(jq -r .name package.json)
+          VERSION=$(jq -r .version package.json)
+          PUBLISH=$(.github/scripts/needs-publish.sh "$NAME" "$VERSION")
+          {
+            echo "name=$NAME"
+            echo "version=$VERSION"
+            echo "publish=$PUBLISH"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Ensure the tag of an already-published version
+        if: steps.check.outputs.publish == 'false'
+        env:
+          NAME: ${{ steps.check.outputs.name }}
+          VERSION: ${{ steps.check.outputs.version }}
+          SHA: ${{ steps.on-main.outputs.sha }}
+          PUBLISHED_NOW: "false"
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: .github/scripts/ensure-tag.sh
+
+  publish:
+    needs: check
+    if: needs.check.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    environment: npm   # only main may use it; npm's trusted publisher requires it
+    permissions:
+      contents: write   # for the tag push
+      id-token: write   # for the OIDC token exchange with npm (trusted publishing)
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.check.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - id: recheck
+        name: Skip what an earlier attempt already published
+        # "Re-run failed jobs" reuses check's outputs. If an attempt published
+        # and then failed, those still say to publish, and npm would refuse
+        # the version before the tag step's turn. So ask npm again.
+        env:
+          NAME: ${{ needs.check.outputs.name }}
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          PUBLISH=$(.github/scripts/needs-publish.sh "$NAME" "$VERSION")
+          echo "publish=$PUBLISH" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v6
+        with:
+          # Node 24 ships npm 11.x, which supports trusted publishing.
+          node-version: 24
+          registry-url: https://registry.npmjs.org/
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Publish to npm (trusted publishing)
+        if: steps.recheck.outputs.publish == 'true'
+        # `npm publish` runs prepublishOnly first: typecheck, tests (which
+        # build first) and build. Any failure stops the publish. The tests
+        # stand in for the model, so no model key is needed here.
+        # --provenance: the repository is public, so npm can attest which
+        # commit and workflow built the package.
+        run: npm publish --provenance --access public
+
+      - name: Tag the published commit
+        # Keyed to check, not recheck: a re-run after the publish succeeded
+        # and the tag push failed still has this run's commit to tag. When
+        # recheck skipped the publish, PUBLISHED_NOW is false, so
+        # ensure-tag.sh tags this commit only if npm's gitHead says the
+        # version was published from it, not from some later commit.
+        if: needs.check.outputs.publish == 'true'
+        env:
+          NAME: ${{ needs.check.outputs.name }}
+          VERSION: ${{ needs.check.outputs.version }}
+          SHA: ${{ needs.check.outputs.sha }}
+          PUBLISHED_NOW: ${{ steps.recheck.outputs.publish }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: .github/scripts/ensure-tag.sh
