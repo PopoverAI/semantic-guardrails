@@ -1,0 +1,61 @@
+{
+  "name": "semantic-guardrails",
+  "version": "0.1.0",
+  "description": "Guardrails enforced by meaning: plain assertions in YAML, checked by an evaluation model like TypeSafe's Jev.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PopoverAI/semantic-guardrails.git"
+  },
+  "keywords": [
+    "guardrails",
+    "jev",
+    "typesafe",
+    "evaluation",
+    "assertions",
+    "yaml",
+    "ai"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "semantic-guardrails": "./dist/bin.js"
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build",
+    "pretest": "npm run build",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write ."
+  },
+  "dependencies": {
+    "@typesafe-ai/sdk": "^0.6.0",
+    "yaml": "^2.9.1"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.14",
+    "@popoverai/dotrequirements": "^0.32.1",
+    "@types/node": "^20.19.43",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
