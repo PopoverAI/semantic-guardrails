@@ -1,5 +1,9 @@
-import { APIError, TypeSafeClient, type NoulQuestion } from "@typesafe-ai/sdk";
-import { type Guardrails, GuardrailsError, loadGuardrails } from "./guardrails.js";
+import { APIError, type NoulQuestion, TypeSafeClient } from "@typesafe-ai/sdk";
+import {
+  type Guardrails,
+  GuardrailsError,
+  loadGuardrails,
+} from "./guardrails.js";
 
 export type Verdict = "pass" | "fail" | "unsure";
 
@@ -56,9 +60,12 @@ export async function check(
   options: CheckOptions = {},
 ): Promise<CheckResult> {
   const { assertions, pass, fail } = await loadGuardrails(guardrails);
-  const text = typeof content === "string" ? content : JSON.stringify(content, null, 2);
+  const text =
+    typeof content === "string" ? content : JSON.stringify(content, null, 2);
   if (text === undefined || text.trim() === "") {
-    throw new GuardrailsError("The content is empty, so there is nothing to judge.");
+    throw new GuardrailsError(
+      "The content is empty, so there is nothing to judge.",
+    );
   }
   const client = modelClient(options);
 
@@ -72,19 +79,30 @@ export async function check(
     ({ answers } = await client.systemOne({ state: text, questions }));
   } catch (error) {
     if (tooLong(error)) throw new Error(TOO_LONG, { cause: error });
-    throw new Error(`The model couldn't judge the content: ${describe(error)}`, {
-      cause: error,
-    });
+    throw new Error(
+      `The model couldn't judge the content: ${describe(error)}`,
+      {
+        cause: error,
+      },
+    );
   }
   return {
     results: assertions.map((assertion, i) => {
       const probability = answers[`a${i}`].noul;
-      return { assertion, verdict: verdict(probability, pass, fail), probability };
+      return {
+        assertion,
+        verdict: verdict(probability, pass, fail),
+        probability,
+      };
     }),
   };
 }
 
-export function verdict(probability: number, pass: number, fail: number): Verdict {
+export function verdict(
+  probability: number,
+  pass: number,
+  fail: number,
+): Verdict {
   if (probability >= pass) return "pass";
   if (probability <= fail) return "fail";
   return "unsure";
@@ -123,7 +141,10 @@ function env(name: string): string | undefined {
 }
 
 function tooLong(error: unknown): boolean {
-  return error instanceof APIError && JSON.stringify(error.body ?? "").includes("max_tokens_exceeded");
+  return (
+    error instanceof APIError &&
+    JSON.stringify(error.body ?? "").includes("max_tokens_exceeded")
+  );
 }
 
 function describe(error: unknown): string {

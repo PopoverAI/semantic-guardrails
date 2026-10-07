@@ -56,7 +56,9 @@ export async function run(argv: string[], io: Io): Promise<number> {
     return 2;
   }
 
-  io.stdout(args.values.json ? `${JSON.stringify(result, null, 2)}\n` : report(result));
+  io.stdout(
+    args.values.json ? `${JSON.stringify(result, null, 2)}\n` : report(result),
+  );
   return result.results.some((r) => r.verdict === "fail") ? 1 : 0;
 }
 
@@ -101,7 +103,10 @@ async function fromStdin(io: Io): Promise<string> {
 function report({ results }: CheckResult): string {
   const lines = results
     .filter((r) => r.verdict !== "pass")
-    .map((r) => `${r.verdict === "fail" ? "FAIL  " : "UNSURE"}  ${r.probability.toFixed(2)}  ${r.assertion}`);
+    .map(
+      (r) =>
+        `${r.verdict === "fail" ? "FAIL  " : "UNSURE"}  ${r.probability.toFixed(2)}  ${r.assertion}`,
+    );
   const passed = results.filter((r) => r.verdict === "pass").length;
   lines.push(`${passed} of ${results.length} assertions passed.`);
   return `${lines.join("\n")}\n`;

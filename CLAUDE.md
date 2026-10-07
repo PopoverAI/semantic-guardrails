@@ -9,7 +9,10 @@ Behavior is specified in `.requirements/semantic-guardrails.requirements.md` (do
 ```sh
 npm test         # builds, then runs vitest
 npm run typecheck
+npm run lint     # Biome; `npm run lint:fix` applies its fixes
 ```
+
+Every pull request runs Biome (`.github/workflows/lint.yml`) and gets a formal review from `claude[bot]` (`.github/workflows/pr-review.yml`, which calls the shared workflow in PopoverAI/claude-pr-review).
 
 ## Releases
 

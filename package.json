@@ -40,13 +40,16 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "prepublishOnly": "npm run typecheck && npm test && npm run build",
-    "pretest": "npm run build"
+    "pretest": "npm run build",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write ."
   },
   "dependencies": {
     "@typesafe-ai/sdk": "^0.6.0",
     "yaml": "^2.9.1"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.5.14",
     "@popoverai/dotrequirements": "^0.32.1",
     "@types/node": "^20.19.43",
     "typescript": "^5.9.3",

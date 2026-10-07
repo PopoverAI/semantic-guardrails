@@ -1,0 +1,30 @@
+name: Lint
+
+# Biome checks formatting, lint and import order on every pull request.
+# Fix what it reports with `npm run lint:fix`.
+
+on:
+  pull_request:
+
+# Cancel a PR's in-flight run when a newer commit is pushed to the same branch.
+concurrency:
+  group: lint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  biome:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # Reads the Biome version from the lockfile.
+      - name: Setup Biome
+        uses: biomejs/setup-biome@v2
+
+      - name: Run Biome
+        run: biome ci .

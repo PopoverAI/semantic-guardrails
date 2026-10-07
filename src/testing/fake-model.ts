@@ -12,9 +12,7 @@ export interface SentRequest {
   questions: Record<string, { type: string; instructions: unknown }>;
 }
 
-type Reply =
-  | { probabilities: number[] }
-  | { status: number; body: unknown };
+type Reply = { probabilities: number[] } | { status: number; body: unknown };
 
 /**
  * Stand in for the model behind `fetch`: each request gets the next reply,

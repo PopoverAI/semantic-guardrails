@@ -45,7 +45,10 @@ export async function loadGuardrails(
 }
 
 /** Parse guardrails from YAML text; `name` says where it came from in messages. */
-export function parseGuardrails(text: string, name: string): ResolvedGuardrails {
+export function parseGuardrails(
+  text: string,
+  name: string,
+): ResolvedGuardrails {
   const doc = parseDocument(text);
   const [problem] = doc.errors;
   if (problem) {
@@ -56,7 +59,9 @@ export function parseGuardrails(text: string, name: string): ResolvedGuardrails 
     );
   }
   if (doc.contents !== null && !isMap(doc.contents)) {
-    throw new GuardrailsError(`${name} must be a mapping with an \`assertions\` list.`);
+    throw new GuardrailsError(
+      `${name} must be a mapping with an \`assertions\` list.`,
+    );
   }
   // Read assertions node by node, so a non-text entry is caught before YAML turns it into something else.
   const assertions = doc.get("assertions");
@@ -74,7 +79,9 @@ export function parseGuardrails(text: string, name: string): ResolvedGuardrails 
 
 function resolve(raw: unknown, name: string): ResolvedGuardrails {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
-    throw new GuardrailsError(`${name} must be a mapping with an \`assertions\` list.`);
+    throw new GuardrailsError(
+      `${name} must be a mapping with an \`assertions\` list.`,
+    );
   }
   const settings = raw as Record<string, unknown>;
   for (const key of Object.keys(settings)) {
@@ -86,8 +93,14 @@ function resolve(raw: unknown, name: string): ResolvedGuardrails {
   }
 
   const assertions = settings.assertions;
-  if (assertions === undefined || assertions === null || (Array.isArray(assertions) && assertions.length === 0)) {
-    throw new GuardrailsError(`${name} has no assertions, so there is nothing to check.`);
+  if (
+    assertions === undefined ||
+    assertions === null ||
+    (Array.isArray(assertions) && assertions.length === 0)
+  ) {
+    throw new GuardrailsError(
+      `${name} has no assertions, so there is nothing to check.`,
+    );
   }
   if (!Array.isArray(assertions)) {
     throw new GuardrailsError(`${name}: \`assertions\` must be a list.`);
@@ -119,7 +132,9 @@ function threshold(
 ): number {
   if (value === undefined || value === null) return fallback;
   if (typeof value !== "number" || Number.isNaN(value)) {
-    throw new GuardrailsError(`${name}: \`${setting}\` must be a number from 0 to 1.`);
+    throw new GuardrailsError(
+      `${name}: \`${setting}\` must be a number from 0 to 1.`,
+    );
   }
   if (value < 0 || value > 1) {
     throw new GuardrailsError(
@@ -131,5 +146,8 @@ function threshold(
 
 /** The message's first line, less the position the YAML parser appends to it. */
 function firstLine(text: string): string {
-  return text.split("\n")[0].replace(/ at line \d+, column \d+:?$/, "").trim();
+  return text
+    .split("\n")[0]
+    .replace(/ at line \d+, column \d+:?$/, "")
+    .trim();
 }

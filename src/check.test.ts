@@ -1,7 +1,12 @@
 import { requirement } from "@popoverai/dotrequirements/test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { check } from "./check.js";
-import { fakeModel, gatewayKeyOnly, guardrailsFile, tooLongRefusal } from "./testing/fake-model.js";
+import {
+  fakeModel,
+  gatewayKeyOnly,
+  guardrailsFile,
+  tooLongRefusal,
+} from "./testing/fake-model.js";
 
 const SPEC = "# Saved searches\n\nSaved searches are for support agents.";
 const ONE = { assertions: ["The spec names who the feature is for."] };
@@ -26,19 +31,28 @@ describe(requirement("GUARD-3"), () => {
 
   it(requirement("GUARD-3.0"), async () => {
     fakeModel({ probabilities: [0.8, 0.95] });
-    const { results } = await check({ ...thresholds, assertions: ["A.", "B."] }, SPEC);
+    const { results } = await check(
+      { ...thresholds, assertions: ["A.", "B."] },
+      SPEC,
+    );
     expect(results.map((r) => r.verdict)).toEqual(["pass", "pass"]);
   });
 
   it(requirement("GUARD-3.1"), async () => {
     fakeModel({ probabilities: [0.3, 0.02] });
-    const { results } = await check({ ...thresholds, assertions: ["A.", "B."] }, SPEC);
+    const { results } = await check(
+      { ...thresholds, assertions: ["A.", "B."] },
+      SPEC,
+    );
     expect(results.map((r) => r.verdict)).toEqual(["fail", "fail"]);
   });
 
   it(requirement("GUARD-3.2"), async () => {
     fakeModel({ probabilities: [0.31, 0.79] });
-    const { results } = await check({ ...thresholds, assertions: ["A.", "B."] }, SPEC);
+    const { results } = await check(
+      { ...thresholds, assertions: ["A.", "B."] },
+      SPEC,
+    );
     expect(results.map((r) => r.verdict)).toEqual(["unsure", "unsure"]);
   });
 
@@ -62,7 +76,11 @@ describe(requirement("GUARD-4"), () => {
     await check(file, SPEC);
     // each question is the assertion and its type, with nothing else added
     expect(Object.values(sent[0].questions)).toEqual([
-      { type: "noul", instructions: "Every requirement says what the user sees when it fails." },
+      {
+        type: "noul",
+        instructions:
+          "Every requirement says what the user sees when it fails.",
+      },
       { type: "noul", instructions: "The spec names who the feature is for." },
     ]);
   });
@@ -70,7 +88,10 @@ describe(requirement("GUARD-4"), () => {
 
 it(requirement("GUARD-5"), async () => {
   const sent = fakeModel({ probabilities: [0.9, 0.1, 0.5, 0.8, 0.2] });
-  const { results } = await check({ assertions: ["A.", "B.", "C.", "D.", "E."] }, SPEC);
+  const { results } = await check(
+    { assertions: ["A.", "B.", "C.", "D.", "E."] },
+    SPEC,
+  );
   expect(sent).toHaveLength(1);
   expect(Object.keys(sent[0].questions)).toHaveLength(5);
   expect(results).toHaveLength(5);
@@ -89,12 +110,16 @@ describe(requirement("GUARD-6"), () => {
   it(requirement("GUARD-6.1"), async () => {
     // a retry would be answered, so only giving no verdicts at all passes
     fakeModel(tooLongRefusal, { probabilities: [0.9] });
-    await expect(check(ONE, "Saved searches are for support agents. ".repeat(6_000))).rejects.toThrow();
+    await expect(
+      check(ONE, "Saved searches are for support agents. ".repeat(6_000)),
+    ).rejects.toThrow();
   });
 
   it(requirement("GUARD-6.2"), async () => {
     fakeModel(tooLongRefusal);
-    const error = await rejection(check(ONE, "Saved searches are for support agents. ".repeat(6_000)));
+    const error = await rejection(
+      check(ONE, "Saved searches are for support agents. ".repeat(6_000)),
+    );
     expect(error.message).toMatch(
       /content and assertions together are more than the model can judge in one request \(about 32,000 tokens for Jev\)/,
     );
@@ -116,7 +141,9 @@ describe(requirement("GUARD-8"), () => {
   it(requirement("GUARD-8.0"), async () => {
     const sent = fakeModel({ probabilities: [0.9] });
     await check(ONE, SPEC);
-    expect(sent[0].url).toBe("https://ai-gateway.vercel.sh/typesafe/v1/systemone");
+    expect(sent[0].url).toBe(
+      "https://ai-gateway.vercel.sh/typesafe/v1/systemone",
+    );
     expect(sent[0].model).toBe("typesafe-ai/jev");
     expect(sent[0].authorization).toBe("Bearer gateway-key");
   });
@@ -152,7 +179,9 @@ describe(requirement("GUARD-8"), () => {
     vi.stubEnv("TYPESAFE_API_KEY", "typesafe-key");
     const sent = fakeModel({ probabilities: [0.9] });
     await check(ONE, SPEC, { aiGatewayApiKey: "passed-gateway" });
-    expect(sent[0].url).toBe("https://ai-gateway.vercel.sh/typesafe/v1/systemone");
+    expect(sent[0].url).toBe(
+      "https://ai-gateway.vercel.sh/typesafe/v1/systemone",
+    );
     expect(sent[0].authorization).toBe("Bearer passed-gateway");
   });
 
@@ -160,7 +189,9 @@ describe(requirement("GUARD-8"), () => {
     vi.stubEnv("AI_GATEWAY_API_KEY", "");
     const sent = fakeModel({ probabilities: [0.9] });
     const error = await rejection(check(ONE, SPEC));
-    expect(error.message).toMatch(/key is needed.*AI_GATEWAY_API_KEY.*TYPESAFE_API_KEY/);
+    expect(error.message).toMatch(
+      /key is needed.*AI_GATEWAY_API_KEY.*TYPESAFE_API_KEY/,
+    );
     expect(sent).toHaveLength(0);
   });
 
@@ -194,7 +225,9 @@ describe(requirement("GUARD-8"), () => {
 describe(requirement("GUARD-9"), () => {
   it(requirement("GUARD-9.0.0"), async () => {
     fakeModel({ probabilities: [0.9] });
-    const file = guardrailsFile("assertions:\n  - The spec names who the feature is for.\n");
+    const file = guardrailsFile(
+      "assertions:\n  - The spec names who the feature is for.\n",
+    );
     const { results } = await check(file, SPEC);
     expect(results[0].assertion).toBe("The spec names who the feature is for.");
   });
@@ -213,7 +246,10 @@ describe(requirement("GUARD-9"), () => {
 
   it(requirement("GUARD-9.1.1"), async () => {
     const sent = fakeModel({ probabilities: [0.9] });
-    const ticket = { subject: "Charged twice", messages: ["Please refund one."] };
+    const ticket = {
+      subject: "Charged twice",
+      messages: ["Please refund one."],
+    };
     await check(ONE, ticket);
     expect(typeof sent[0].state).toBe("string");
     expect(JSON.parse(sent[0].state as string)).toEqual(ticket);
@@ -234,7 +270,9 @@ describe(requirement("GUARD-9"), () => {
   it(requirement("GUARD-9.3"), async () => {
     fakeModel({ probabilities: [0.9] });
     // refused guardrails, empty content and a missing key each reject with why
-    await expect(check({ assertions: [] }, SPEC)).rejects.toThrow(/nothing to check/);
+    await expect(check({ assertions: [] }, SPEC)).rejects.toThrow(
+      /nothing to check/,
+    );
     await expect(check(ONE, "")).rejects.toThrow(/nothing to judge/);
     vi.stubEnv("AI_GATEWAY_API_KEY", "");
     await expect(check(ONE, SPEC)).rejects.toThrow(/key is needed/);
