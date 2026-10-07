@@ -3,13 +3,7 @@ import { relative } from "node:path";
 import { requirement } from "@popoverai/dotrequirements/test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { run } from "./cli.js";
-import { contentFile, fakeModel, gatewayKeyOnly, guardrailsFile } from "./testing/fake-model.js";
-
-/** Jev's refusal of content too long to judge, as the AI Gateway relays it. */
-const TOO_LONG = {
-  status: 400,
-  body: { error: { message: '{"error_type":"max_tokens_exceeded"}' } },
-};
+import { contentFile, fakeModel, gatewayKeyOnly, guardrailsFile, tooLongRefusal } from "./testing/fake-model.js";
 
 const GUARDRAILS = `assertions:
   - The spec names who the feature is for.
@@ -103,16 +97,24 @@ describe(requirement("GUARD-10"), () => {
   });
 
   it(requirement("GUARD-10.6"), async () => {
-    // the model refuses the content as too long, so a script piping --json into another tool gets nothing to parse
-    fakeModel(TOO_LONG);
-    const refused = await sam(["check", guardrailsFile(GUARDRAILS), "--json"], "# Spec");
-    expect(refused.stderr).toMatch(/more than the model can judge in one request/);
-    expect(refused.stdout).toBe("");
-    // and with no key, the same
-    vi.stubEnv("AI_GATEWAY_API_KEY", "");
-    const keyless = await sam(["check", guardrailsFile(GUARDRAILS), "--json"], "# Spec");
-    expect(keyless.stderr).toMatch(/key is needed/);
-    expect(keyless.stdout).toBe("");
+    const guardrails = guardrailsFile(GUARDRAILS);
+    const ways: Array<[string, () => void, string[], string | null]> = [
+      ["too long", () => fakeModel(tooLongRefusal), ["check", guardrails], "# Spec"],
+      ["unreadable file", () => fakeModel({ probabilities: [0.9, 0.9, 0.9] }), ["check", guardrails, "/no/such/spec.md"], null],
+      ["used wrongly", () => fakeModel({ probabilities: [0.9, 0.9, 0.9] }), ["check"], "# Spec"],
+      ["no key", () => {
+        fakeModel({ probabilities: [0.9, 0.9, 0.9] });
+        vi.stubEnv("AI_GATEWAY_API_KEY", "");
+      }, ["check", guardrails], "# Spec"],
+    ];
+    for (const [way, arrange, argv, stdin] of ways) {
+      for (const json of [false, true]) {
+        arrange();
+        const { stdout, stderr } = await sam(json ? [...argv, "--json"] : argv, stdin);
+        expect(stderr, `${way}${json ? " with --json" : ""}`).not.toBe("");
+        expect(stdout, `${way}${json ? " with --json" : ""}`).toBe("");
+      }
+    }
   });
 });
 
@@ -156,7 +158,7 @@ describe(requirement("GUARD-11"), () => {
     });
 
     it(requirement("GUARD-11.2.3"), async () => {
-      fakeModel(TOO_LONG);
+      fakeModel(tooLongRefusal);
       const { code, stderr } = await sam(["check", guardrailsFile(GUARDRAILS)], "# Spec");
       expect(code).toBe(2);
       expect(stderr).toMatch(/more than the model can judge in one request/);

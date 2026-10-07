@@ -63,6 +63,12 @@ export function fakeModel(...replies: Reply[]): SentRequest[] {
   return sent;
 }
 
+/** Jev's refusal of content too long to judge, as the AI Gateway relays it. */
+export const tooLongRefusal = {
+  status: 400,
+  body: { error: { message: '{"error_type":"max_tokens_exceeded"}' } },
+};
+
 /** A guardrails file holding `yaml`, in a fresh directory; returns its path. */
 export function guardrailsFile(yaml: string): string {
   const dir = mkdtempSync(join(tmpdir(), "guardrails-"));

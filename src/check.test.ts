@@ -1,7 +1,7 @@
 import { requirement } from "@popoverai/dotrequirements/test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { check } from "./check.js";
-import { fakeModel, gatewayKeyOnly, guardrailsFile } from "./testing/fake-model.js";
+import { fakeModel, gatewayKeyOnly, guardrailsFile, tooLongRefusal } from "./testing/fake-model.js";
 
 const SPEC = "# Saved searches\n\nSaved searches are for support agents.";
 const ONE = { assertions: ["The spec names who the feature is for."] };
@@ -76,16 +76,10 @@ it(requirement("GUARD-5"), async () => {
   expect(results).toHaveLength(5);
 });
 
-/** Jev's refusal of content too long to judge, as the AI Gateway relays it. */
-const TOO_LONG = {
-  status: 400,
-  body: { error: { message: '{"error_type":"max_tokens_exceeded"}' } },
-};
-
 describe(requirement("GUARD-6"), () => {
   it(requirement("GUARD-6.0"), async () => {
     // about 60,000 tokens, nearly twice what Jev judges in one request: sent whole, once, and not again after the refusal
-    const sent = fakeModel(TOO_LONG, { probabilities: [0.9] });
+    const sent = fakeModel(tooLongRefusal, { probabilities: [0.9] });
     const content = "The spec names who the feature is for. ".repeat(6_000);
     await check(ONE, content).catch(() => {});
     expect(sent).toHaveLength(1);
@@ -93,12 +87,13 @@ describe(requirement("GUARD-6"), () => {
   });
 
   it(requirement("GUARD-6.1"), async () => {
-    fakeModel(TOO_LONG);
+    // a retry would be answered, so only giving no verdicts at all passes
+    fakeModel(tooLongRefusal, { probabilities: [0.9] });
     await expect(check(ONE, "Saved searches are for support agents. ".repeat(6_000))).rejects.toThrow();
   });
 
   it(requirement("GUARD-6.2"), async () => {
-    fakeModel(TOO_LONG);
+    fakeModel(tooLongRefusal);
     const error = await rejection(check(ONE, "Saved searches are for support agents. ".repeat(6_000)));
     expect(error.message).toMatch(
       /content and assertions together are more than the model can judge in one request \(about 32,000 tokens for Jev\)/,
@@ -174,6 +169,13 @@ describe(requirement("GUARD-8"), () => {
     const error = await rejection(check(ONE, SPEC));
     expect(error.message).toMatch(/model couldn't judge the content/);
     expect(error.message).toMatch(/401|Invalid API key/);
+  });
+
+  it(`${requirement("GUARD-8.5")}: a request refused for a reason other than length`, async () => {
+    fakeModel({ status: 400, body: { error: { message: "invalid request" } } });
+    const error = await rejection(check(ONE, SPEC));
+    expect(error.message).toMatch(/model couldn't judge the content/);
+    expect(error.message).not.toMatch(/more than the model can judge/);
   });
 
   it(`${requirement("GUARD-8.5")}: an unreachable model`, async () => {
