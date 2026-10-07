@@ -94,6 +94,15 @@ for (const { assertion, verdict, probability } of results) {
 
 Jev judges about 32,000 tokens in one request. Content past that is cut from the end, and the result says so (`truncated: true`; a notice on standard error from the command). Cutting the content doesn't change the exit code.
 
+## Checking code
+
+To check a codebase, or part of one, pack it with [Repomix](https://github.com/yamadashy/repomix) and pipe it in. `--compress` keeps signatures and drops function bodies, so more of the code fits before anything is cut:
+
+```sh
+repomix --stdout --compress | semantic-guardrails check guardrails.yaml
+git diff --name-only main | repomix --stdin --stdout | semantic-guardrails check guardrails.yaml
+```
+
 ## License
 
 Apache 2.0
