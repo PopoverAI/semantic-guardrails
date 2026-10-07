@@ -1,6 +1,8 @@
 # semantic-guardrails
 
-Guardrails enforced by meaning. Write what must always be true of some content as plain assertions in a YAML file; an evaluation model judges whether each one holds, and each gets a verdict: pass, fail or unsure.
+Guardrails that check what content means, configured as plain statements in a YAML file.
+
+Some rules can't be written as a pattern: "no function logs a secret", "every requirement says what the user sees when it fails", "the changelog mentions every breaking change". semantic-guardrails lets you write rules like these as assertions, keep them in one file next to what they guard, and check content against them from the command line, in CI or from code. A model judges each assertion, and each one gets a verdict: pass, fail or unsure.
 
 ```yaml
 # guardrails.yaml
@@ -17,9 +19,7 @@ FAIL    0.04  The document contains no placeholders or unresolved TODOs.
 1 of 3 assertions passed.
 ```
 
-It is for invariants that need a model to judge but not an expensive one: checks cheap enough to run on every draft, so the work goes back before a reviewer, human or agent, spends time on it. Checks a program can answer for certain, such as whether a file exists or a pattern matches, belong to a linter.
-
-The model is [TypeSafe's Jev](https://typesafe.ai), which answers yes/no questions about text with a calibrated probability. A check costs one request however many assertions the file holds.
+Rules a program can check for certain, such as whether a file exists or a pattern matches, belong in a linter. semantic-guardrails is for the ones that need judgment.
 
 ## Install
 
@@ -27,33 +27,32 @@ The model is [TypeSafe's Jev](https://typesafe.ai), which answers yes/no questio
 npm install semantic-guardrails
 ```
 
-Node 20 or later.
+Node 20 or later. The model is [TypeSafe's Jev](https://typesafe.ai). Set one key:
 
-## Model access
-
-Set one of:
-
-- `AI_GATEWAY_API_KEY`: a [Vercel AI Gateway](https://vercel.com/ai-gateway) key. Jev is reached through the Gateway.
-- `TYPESAFE_API_KEY`: a TypeSafe API key. Jev is reached through TypeSafe's own API.
+- `AI_GATEWAY_API_KEY`, a [Vercel AI Gateway](https://vercel.com/ai-gateway) key, or
+- `TYPESAFE_API_KEY`, a TypeSafe API key.
 
 When both are set, the Gateway key is used.
 
 ## Writing guardrails
 
-Each entry under `assertions` is a statement that holds when the content is right. Write it as an assertion, not a question, and keep it to one thing: Jev reads it literally, and it is sent exactly as written.
-
-Two optional settings decide the verdict from Jev's probability that an assertion holds:
+A guardrails file is a list of assertions and, optionally, two thresholds:
 
 ```yaml
-pass: 0.75  # at or above this, the assertion passes (default 0.75)
-fail: 0.25  # at or below this, it fails (default 0.25)
+pass: 0.75  # an assertion passes when the model's probability that it holds is at least this (default 0.75)
+fail: 0.25  # and fails when it is at most this (default 0.25)
 assertions:
-  - The pitch states a measurable success metric.
+  - No function logs an API key, token or password.
+  - Every public function has a doc comment.
 ```
 
-Anything in between is **unsure**. Unsure is where hard cases land: an assertion about every item in a list, a near miss, a placeholder written in an unusual way. What unsure means is yours to decide; a gate that blocks only failures lets unsure through to whoever reviews next.
+**Write each assertion as a statement that holds when the content is right,** not as a question, and keep it to one thing. Each is sent to the model exactly as written, with nothing added, so what you read in the file is what is judged.
 
-A file with an unknown setting is refused, so a misspelling like `pas: 0.9` can't silently fall back to the default.
+**Unsure is a verdict of its own.** It's anything between the two thresholds. Hard cases land there: an assertion about every item in a list, a near miss, something written in an unusual way. You decide what unsure means for you. A CI gate that fails only on failures lets unsure through to whoever reviews next. Move the thresholds closer together for fewer unsure verdicts, or further apart to hear about more borderline cases.
+
+**Mistakes in the file are refused, not ignored.** A misspelled setting like `pas: 0.9`, an assertion that isn't text, or thresholds out of order stop the check with a message saying what's wrong, rather than silently falling back to a default.
+
+**Checking costs one model request however many assertions the file holds,** so grouping related assertions in one file is cheaper than splitting them across several.
 
 ## Command line
 
@@ -61,18 +60,34 @@ A file with an unknown setting is refused, so a misspelling like `pas: 0.9` can'
 semantic-guardrails check <guardrails.yaml> [files...] [--json]
 ```
 
-- Named files are judged together, in the order named, each marked with its path. With no files, standard input is judged.
+- Named files are checked together, in the order named, each marked with its path. With no files, standard input is checked.
 - Failed and unsure assertions are listed with their probabilities, then how many passed.
-- `--json` prints the same object `check` returns, and nothing else, to standard output.
+- `--json` prints `{ results: [{ assertion, verdict, probability }] }` to standard output, and nothing else.
 - When it can't check, it says why on standard error and prints nothing to standard output.
 
-Exit codes:
-
-| Code | Meaning |
+| Exit code | Meaning |
 |---|---|
 | 0 | No assertion failed (some may be unsure) |
 | 1 | At least one assertion failed |
 | 2 | Couldn't check: an invalid guardrails file, an unreadable or empty input, content too long for the model, no key, or the model unreachable |
+
+### In CI
+
+```yaml
+# .github/workflows/guardrails.yml
+on: pull_request
+jobs:
+  guardrails:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npx semantic-guardrails check guardrails.yaml docs/spec.md
+        env:
+          AI_GATEWAY_API_KEY: ${{ secrets.AI_GATEWAY_API_KEY }}
+```
 
 ## In code
 
@@ -86,46 +101,19 @@ for (const { assertion, verdict, probability } of results) {
 }
 ```
 
-- The guardrails are a file's path or an object with the same settings: `{ assertions: [...], pass?, fail? }`.
-- The content is text, or any JSON value, which is judged as its JSON text.
-- Pass a key to use it instead of the environment: `check(guardrails, content, { aiGatewayApiKey })` or `{ typesafeApiKey }`.
+- The guardrails are a file's path, or an object with the same settings: `{ assertions: [...], pass?, fail? }`.
+- The content is text, or any JSON value, which is checked as its JSON text.
+- A key passed in is used instead of the environment: `check(guardrails, content, { aiGatewayApiKey })` or `{ typesafeApiKey }`.
 - `check` rejects with a message saying why when it can't give verdicts.
 
-## Long content
+## Content too long for the model
 
-Jev judges about 32,000 tokens in one request, assertions included. Content longer than that is refused, not cut: the check gives no verdicts and says the content is too long (exit 2 from the command). A guardrail that passed on content the model never read would be worse than one that refuses. To check part of something, cut it yourself before piping it in.
+Content longer than the model can judge in one request is refused, never cut: the check gives no verdicts and says the content is too long. A guardrail that passed on content the model never read would be worse than one that refuses. [TypeSafe's docs](https://docs.typesafe.ai) give the model's limit. To check part of something, choose the part before passing it in.
 
-Jev's tokenizer isn't public, and its refusal doesn't say how far over the limit the content is. OpenAI's `cl100k_base` tokenizer comes within about 20% of Jev's count. Measured against Jev in October 2026:
-
-| Content | Characters per Jev token | Jev's count ÷ `cl100k_base`'s |
-|---|---|---|
-| English prose | 3.9 | 1.03 |
-| Markdown | 3.8 | 1.07 |
-| TypeScript | 3.5 | 1.07 |
-| JSON | 2.2 | 1.17 |
-| Emoji and accented text | 2.5 | 0.83 |
-| Japanese | 1.0 | 1.04 |
-
-So to be safe, keep content to about 26,000 `cl100k_base` tokens. (`o200k_base`, the other common tokenizer, was off by as much as 35%.)
-
-### Code
-
-Code files can be named like any others: `semantic-guardrails check guardrails.yaml src/auth.ts src/session.ts`. When there's more code than fits, [Repomix](https://github.com/yamadashy/repomix) can pack a smaller version of it to pipe in, and measure it with `cl100k_base`:
+For code, [Repomix](https://github.com/yamadashy/repomix) packs a smaller version to pipe in: `--compress` keeps signatures and drops function bodies, and `--token-count-tree` shows which files are largest.
 
 ```sh
-# See which files are largest
-repomix --token-count-tree --token-count-encoding cl100k_base --include "src/**/*.ts"
-
-# Pack a smaller version: --compress keeps signatures and drops function bodies
 repomix --stdout --compress --include "src/**/*.ts" | semantic-guardrails check guardrails.yaml
-```
-
-Repomix's `--token-budget` makes Repomix itself exit 1 when the pack is over a budget, which can catch a codebase growing toward the limit before Jev refuses it. With `--stdout` it exits without printing why, and in a pipe its exit code is lost unless `pipefail` is set:
-
-```sh
-set -o pipefail
-repomix --stdout --compress --token-count-encoding cl100k_base --token-budget 26000 \
-  | semantic-guardrails check guardrails.yaml
 ```
 
 ## License
